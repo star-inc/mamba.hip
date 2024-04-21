@@ -4,6 +4,7 @@
 
 // Split into multiple files to compile in paralell
 
-#include "selective_scan_bwd_kernel.cuh"
+#include "selective_scan_fwd_kernel.h"
 
-template void selective_scan_bwd_cuda<float, float>(SSMParamsBwd &params, cudaStream_t stream);
+template void selective_scan_fwd_hip<at::BFloat16, float>(SSMParamsBase &params, hipStream_t stream);
+template void selective_scan_fwd_hip<at::BFloat16, complex_t>(SSMParamsBase &params, hipStream_t stream);
