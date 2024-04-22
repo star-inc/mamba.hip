@@ -32,11 +32,11 @@ struct Selective_Scan_bwd_kernel_traits
     static_assert(kNItems_ % 4 == 0);
     using input_t = input_t_;
     using weight_t = weight_t_;
-    static constexpr int kNThreads = ::rocprim::device_warp_size() * (kNThreads_ / 32);
+    static constexpr int kNThreads = kNThreads_;
     static constexpr int kNItems = kNItems_;
     static constexpr int kNBytes = sizeof(input_t);
     static_assert(kNBytes == 2 || kNBytes == 4);
-    static constexpr int kNElts = kNBytes == 4 ? 4 : std::min(8, kNItems);
+    static constexpr int kNElts = kNBytes == 4 ? 4 : compare::min(8, kNItems);
     static_assert(kNItems % kNElts == 0);
     static constexpr int kNLoads = kNItems / kNElts;
     static constexpr bool kIsComplex = std::is_same_v<weight_t, complex_t>;
@@ -64,12 +64,12 @@ struct Selective_Scan_bwd_kernel_traits
     using BlockReduceFloatT = hipcub::BlockReduce<float, kNThreads, hipcub::BlockReduceAlgorithm::BLOCK_REDUCE_WARP_REDUCTIONS>;
     using BlockReduceComplexT = hipcub::BlockReduce<complex_t, kNThreads, hipcub::BlockReduceAlgorithm::BLOCK_REDUCE_WARP_REDUCTIONS>;
     using BlockExchangeT = hipcub::BlockExchange<float, kNThreads, !kIsComplex ? kNItems : kNItems * 2, false>;
-    static constexpr int kSmemIOSize = std::max({sizeof(typename BlockLoadT::TempStorage),
+    static constexpr int kSmemIOSize = compare::max(sizeof(typename BlockLoadT::TempStorage),
                                                  sizeof(typename BlockLoadVecT::TempStorage),
                                                  (int(kIsVariableB) + int(kIsVariableC)) * sizeof(typename BlockLoadWeightT::TempStorage),
                                                  (int(kIsVariableB) + int(kIsVariableC)) * sizeof(typename BlockLoadWeightVecT::TempStorage),
                                                  sizeof(typename BlockStoreT::TempStorage),
-                                                 sizeof(typename BlockStoreVecT::TempStorage)});
+                                                 sizeof(typename BlockStoreVecT::TempStorage));
     static constexpr int kSmemExchangeSize = (int(kIsVariableB) + int(kIsVariableC)) * sizeof(typename BlockExchangeT::TempStorage);
     static constexpr int kSmemReduceSize = sizeof(typename BlockReduceT::TempStorage);
     static constexpr int kSmemSize = kSmemIOSize + kSmemExchangeSize + kSmemReduceSize + sizeof(typename BlockScanT::TempStorage) + sizeof(typename BlockReverseScanT::TempStorage);
@@ -616,17 +616,13 @@ void selective_scan_bwd_launch(SSMParamsBwd &params, hipStream_t stream)
 template <typename input_t, typename weight_t>
 void selective_scan_bwd_hip(SSMParamsBwd &params, hipStream_t stream)
 {
-    if (params.seqlen <= 128)
+    if (params.seqlen <= 256)
     {
-        selective_scan_bwd_launch<32, 4, input_t, weight_t>(params, stream);
-    }
-    else if (params.seqlen <= 256)
-    {
-        selective_scan_bwd_launch<32, 8, input_t, weight_t>(params, stream);
+        selective_scan_bwd_launch<64, 4, input_t, weight_t>(params, stream);
     }
     else if (params.seqlen <= 512)
     {
-        selective_scan_bwd_launch<32, 16, input_t, weight_t>(params, stream);
+        selective_scan_bwd_launch<64, 8, input_t, weight_t>(params, stream);
     }
     else if (params.seqlen <= 1024)
     {

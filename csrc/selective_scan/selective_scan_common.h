@@ -29,6 +29,35 @@ inline __device__ float4 operator+(const float4 &a, const float4 &b)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace compare
+{
+    template <typename T>
+    __host__ __device__ constexpr T min(T a, T b)
+    {
+        return (a < b) ? a : b;
+    }
+
+    template <typename T, typename... Args>
+    __host__ __device__ constexpr T min(T a, Args... args)
+    {
+        return min(a, min(args...));
+    }
+
+    template <typename T>
+    __host__ __device__ constexpr T max(T a, T b)
+    {
+        return (a > b) ? a : b;
+    }
+
+    template <typename T, typename... Args>
+    __host__ __device__ constexpr T max(T a, Args... args)
+    {
+        return max(a, max(args...));
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 template <int BYTES>
 struct BytesToType
 {

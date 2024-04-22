@@ -243,11 +243,11 @@ selective_scan_fwd(const at::Tensor &u, const at::Tensor &delta,
     TORCH_CHECK(B.scalar_type() == (!is_variable_B ? weight_type : input_type));
     TORCH_CHECK(C.scalar_type() == (!is_variable_C ? weight_type : input_type));
 
-    TORCH_CHECK(u.is_hip());
-    TORCH_CHECK(delta.is_hip());
-    TORCH_CHECK(A.is_hip());
-    TORCH_CHECK(B.is_hip());
-    TORCH_CHECK(C.is_hip());
+    TORCH_CHECK(u.is_cuda());
+    TORCH_CHECK(delta.is_cuda());
+    TORCH_CHECK(A.is_cuda());
+    TORCH_CHECK(B.is_cuda());
+    TORCH_CHECK(C.is_cuda());
 
     TORCH_CHECK(u.stride(-1) == 1 || u.size(-1) == 1);
     TORCH_CHECK(delta.stride(-1) == 1 || delta.size(-1) == 1);
@@ -280,7 +280,7 @@ selective_scan_fwd(const at::Tensor &u, const at::Tensor &delta,
     if (D_.has_value()) {
         auto D = D_.value();
         TORCH_CHECK(D.scalar_type() == at::ScalarType::Float);
-        TORCH_CHECK(D.is_hip());
+        TORCH_CHECK(D.is_cuda());
         TORCH_CHECK(D.stride(-1) == 1 || D.size(-1) == 1);
         CHECK_SHAPE(D, dim);
     }
@@ -288,7 +288,7 @@ selective_scan_fwd(const at::Tensor &u, const at::Tensor &delta,
     if (delta_bias_.has_value()) {
         auto delta_bias = delta_bias_.value();
         TORCH_CHECK(delta_bias.scalar_type() == at::ScalarType::Float);
-        TORCH_CHECK(delta_bias.is_hip());
+        TORCH_CHECK(delta_bias.is_cuda());
         TORCH_CHECK(delta_bias.stride(-1) == 1 || delta_bias.size(-1) == 1);
         CHECK_SHAPE(delta_bias, dim);
     }
@@ -298,7 +298,7 @@ selective_scan_fwd(const at::Tensor &u, const at::Tensor &delta,
     if (has_z) {
         z = z_.value();
         TORCH_CHECK(z.scalar_type() == input_type);
-        TORCH_CHECK(z.is_hip());
+        TORCH_CHECK(z.is_cuda());
         TORCH_CHECK(z.stride(-1) == 1 || z.size(-1) == 1);
         CHECK_SHAPE(z, batch_size, dim, seqlen);
         out_z = torch::empty_like(z);
@@ -361,12 +361,12 @@ selective_scan_bwd(const at::Tensor &u, const at::Tensor &delta,
     TORCH_CHECK(C.scalar_type() == (!is_variable_C ? weight_type : input_type));
     TORCH_CHECK(dout.scalar_type() == input_type);
 
-    TORCH_CHECK(u.is_hip());
-    TORCH_CHECK(delta.is_hip());
-    TORCH_CHECK(A.is_hip());
-    TORCH_CHECK(B.is_hip());
-    TORCH_CHECK(C.is_hip());
-    TORCH_CHECK(dout.is_hip());
+    TORCH_CHECK(u.is_cuda());
+    TORCH_CHECK(delta.is_cuda());
+    TORCH_CHECK(A.is_cuda());
+    TORCH_CHECK(B.is_cuda());
+    TORCH_CHECK(C.is_cuda());
+    TORCH_CHECK(dout.is_cuda());
 
     TORCH_CHECK(u.stride(-1) == 1 || u.size(-1) == 1);
     TORCH_CHECK(delta.stride(-1) == 1 || delta.size(-1) == 1);
@@ -401,7 +401,7 @@ selective_scan_bwd(const at::Tensor &u, const at::Tensor &delta,
     if (D_.has_value()) {
         auto D = D_.value();
         TORCH_CHECK(D.scalar_type() == at::ScalarType::Float);
-        TORCH_CHECK(D.is_hip());
+        TORCH_CHECK(D.is_cuda());
         TORCH_CHECK(D.stride(-1) == 1 || D.size(-1) == 1);
         CHECK_SHAPE(D, dim);
     }
@@ -409,7 +409,7 @@ selective_scan_bwd(const at::Tensor &u, const at::Tensor &delta,
     if (delta_bias_.has_value()) {
         auto delta_bias = delta_bias_.value();
         TORCH_CHECK(delta_bias.scalar_type() == at::ScalarType::Float);
-        TORCH_CHECK(delta_bias.is_hip());
+        TORCH_CHECK(delta_bias.is_cuda());
         TORCH_CHECK(delta_bias.stride(-1) == 1 || delta_bias.size(-1) == 1);
         CHECK_SHAPE(delta_bias, dim);
     }
@@ -419,21 +419,21 @@ selective_scan_bwd(const at::Tensor &u, const at::Tensor &delta,
     if (has_z) {
         z = z_.value();
         TORCH_CHECK(z.scalar_type() == input_type);
-        TORCH_CHECK(z.is_hip());
+        TORCH_CHECK(z.is_cuda());
         TORCH_CHECK(z.stride(-1) == 1 || z.size(-1) == 1);
         CHECK_SHAPE(z, batch_size, dim, seqlen);
 
         TORCH_CHECK(out_.has_value());
         out = out_.value();
         TORCH_CHECK(out.scalar_type() == input_type);
-        TORCH_CHECK(out.is_hip());
+        TORCH_CHECK(out.is_cuda());
         TORCH_CHECK(out.stride(-1) == 1 || out.size(-1) == 1);
         CHECK_SHAPE(out, batch_size, dim, seqlen);
 
         if (dz_.has_value()) {
             dz = dz_.value();
             TORCH_CHECK(dz.scalar_type() == input_type);
-            TORCH_CHECK(dz.is_hip());
+            TORCH_CHECK(dz.is_cuda());
             TORCH_CHECK(dz.stride(-1) == 1 || dz.size(-1) == 1);
             CHECK_SHAPE(dz, batch_size, dim, seqlen);
         } else {
@@ -450,7 +450,7 @@ selective_scan_bwd(const at::Tensor &u, const at::Tensor &delta,
     if (x_.has_value()) {
         auto x = x_.value();
         TORCH_CHECK(x.scalar_type() == weight_type);
-        TORCH_CHECK(x.is_hip());
+        TORCH_CHECK(x.is_cuda());
         TORCH_CHECK(x.is_contiguous());
         CHECK_SHAPE(x, batch_size, dim, n_chunks, 2 * dstate);
     }

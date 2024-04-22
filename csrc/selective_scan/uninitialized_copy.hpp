@@ -41,7 +41,23 @@ __host__ __device__ void uninitialized_copy(T *ptr, U &&val)
   new (ptr) T(::cuda::std::forward<U>(val));
 }
 #elif defined(__HIP_PLATFORM_HCC__) || defined(__HIP_PLATFORM_AMD__)
-template <typename T, typename U>
+template <typename T,
+          typename U,
+          typename std::enable_if<
+            std::is_trivially_copyable<T>::value,
+            int
+          >::type = 0>
+__host__ __device__ void uninitialized_copy(T *ptr, U &&val)
+{
+  *ptr = std::forward<U>(val);
+}
+
+template <typename T,
+         typename U,
+         typename std::enable_if<
+           !std::is_trivially_copyable<T>::value,
+           int
+         >::type = 0>
 __host__ __device__ void uninitialized_copy(T *ptr, U &&val)
 {
   new (ptr) T(std::forward<U>(val));

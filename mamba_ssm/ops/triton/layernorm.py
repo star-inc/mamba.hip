@@ -43,7 +43,8 @@ def rms_norm_ref(x, weight, bias, residual=None, eps=1e-6, prenorm=False, upcast
     if residual is not None:
         x = (x + residual).to(x.dtype)
     rstd = 1 / torch.sqrt((x.square()).mean(dim=-1, keepdim=True) + eps)
-    out = (x * rstd * weight) + bias if bias is not None else (x * rstd * weight)
+    out = (x * rstd * weight) + \
+        bias if bias is not None else (x * rstd * weight)
     out = out.to(dtype)
     return out if not prenorm else (out, x)
 
@@ -55,7 +56,6 @@ def rms_norm_ref(x, weight, bias, residual=None, eps=1e-6, prenorm=False, upcast
         triton.Config({}, num_warps=4),
         triton.Config({}, num_warps=8),
         triton.Config({}, num_warps=16),
-        triton.Config({}, num_warps=32),
     ],
     key=["N", "HAS_RESIDUAL", "STORE_RESIDUAL_OUT", "IS_RMS_NORM", "HAS_BIAS"],
 )
@@ -95,7 +95,8 @@ def _layer_norm_fwd_1pass_kernel(
     cols = tl.arange(0, BLOCK_N)
     x = tl.load(X + cols, mask=cols < N, other=0.0).to(tl.float32)
     if HAS_RESIDUAL:
-        residual = tl.load(RESIDUAL + cols, mask=cols < N, other=0.0).to(tl.float32)
+        residual = tl.load(RESIDUAL + cols, mask=cols <
+                           N, other=0.0).to(tl.float32)
         x += residual
     if STORE_RESIDUAL_OUT:
         tl.store(RESIDUAL_OUT + cols, x, mask=cols < N)
@@ -143,13 +144,15 @@ def _layer_norm_fwd(
         assert residual_out.stride(-1) == 1
     else:
         residual_out = None
-    mean = torch.empty((M,), dtype=torch.float32, device=x.device) if not is_rms_norm else None
+    mean = torch.empty((M,), dtype=torch.float32,
+                       device=x.device) if not is_rms_norm else None
     rstd = torch.empty((M,), dtype=torch.float32, device=x.device)
     # Less than 64KB per feature: enqueue fused kernel
     MAX_FUSED_SIZE = 65536 // x.element_size()
     BLOCK_N = min(MAX_FUSED_SIZE, triton.next_power_of_2(N))
     if N > BLOCK_N:
-        raise RuntimeError("This layer norm doesn't support feature dim >= 64KB.")
+        raise RuntimeError(
+            "This layer norm doesn't support feature dim >= 64KB.")
     # heuristics for number of warps
     with torch.cuda.device(x.device.index):
         _layer_norm_fwd_1pass_kernel[(M,)](
@@ -184,7 +187,6 @@ def _layer_norm_fwd(
         triton.Config({}, num_warps=4),
         triton.Config({}, num_warps=8),
         triton.Config({}, num_warps=16),
-        triton.Config({}, num_warps=32),
     ],
     key=["N", "HAS_DRESIDUAL", "STORE_DRESIDUAL", "IS_RMS_NORM", "HAS_BIAS"],
 )
@@ -322,14 +324,17 @@ def _layer_norm_bwd(
         if x_dtype is None
         else torch.empty(M, N, dtype=x_dtype, device=x.device)
     )
-    dresidual_in = torch.empty_like(x) if has_residual and dx.dtype != x.dtype else None
-    y = torch.empty(M, N, dtype=dy.dtype, device=dy.device) if recompute_output else None
+    dresidual_in = torch.empty_like(
+        x) if has_residual and dx.dtype != x.dtype else None
+    y = torch.empty(M, N, dtype=dy.dtype,
+                    device=dy.device) if recompute_output else None
 
     # Less than 64KB per feature: enqueue fused kernel
     MAX_FUSED_SIZE = 65536 // x.element_size()
     BLOCK_N = min(MAX_FUSED_SIZE, triton.next_power_of_2(N))
     if N > BLOCK_N:
-        raise RuntimeError("This layer norm doesn't support feature dim >= 64KB.")
+        raise RuntimeError(
+            "This layer norm doesn't support feature dim >= 64KB.")
     sm_count = torch.cuda.get_device_properties(x.device).multi_processor_count
     _dw = torch.empty((sm_count, N), dtype=torch.float32, device=weight.device)
     _db = (
@@ -483,7 +488,8 @@ class RMSNorm(torch.nn.Module):
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__()
         self.eps = eps
-        self.weight = torch.nn.Parameter(torch.empty(hidden_size, **factory_kwargs))
+        self.weight = torch.nn.Parameter(
+            torch.empty(hidden_size, **factory_kwargs))
         self.register_parameter("bias", None)
         self.reset_parameters()
 
@@ -549,10 +555,12 @@ class LayerNormLinearFn(torch.autograd.Function):
         y = y.reshape(x_shape_og)
         dtype = torch.get_autocast_gpu_dtype() if torch.is_autocast_enabled() else y.dtype
         linear_weight = linear_weight.to(dtype)
-        linear_bias = linear_bias.to(dtype) if linear_bias is not None else None
+        linear_bias = linear_bias.to(
+            dtype) if linear_bias is not None else None
         out = F.linear(y.to(linear_weight.dtype), linear_weight, linear_bias)
         # We don't store y, will be recomputed in the backward pass to save memory
-        ctx.save_for_backward(residual_out, norm_weight, norm_bias, linear_weight, mean, rstd)
+        ctx.save_for_backward(residual_out, norm_weight,
+                              norm_bias, linear_weight, mean, rstd)
         ctx.x_shape_og = x_shape_og
         ctx.eps = eps
         ctx.is_rms_norm = is_rms_norm
