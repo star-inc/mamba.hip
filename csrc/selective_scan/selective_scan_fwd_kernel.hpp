@@ -23,7 +23,7 @@ struct Selective_Scan_fwd_kernel_traits
     static_assert(kNItems_ % 4 == 0);
     using input_t = input_t_;
     using weight_t = weight_t_;
-    static constexpr int kNThreads = kNThreads_;
+    static constexpr int kNThreads = ::rocprim::device_warp_size() * (kNThreads_ / 32);
     // Setting MinBlocksPerMP to be 3 (instead of 2) for 128 threads improves occupancy.
     static constexpr int kMinBlocks = kNThreads < 128 ? 5 : 3;
     static constexpr int kNItems = kNItems_;
@@ -43,18 +43,15 @@ struct Selective_Scan_fwd_kernel_traits
 
     using vec_t = typename BytesToType<kNBytes * kNElts>::Type;
     using scan_t = std::conditional_t<!kIsComplex, float2, float4>;
-    using BlockLoadT = hipcub::BlockLoad<input_t, kNThreads, kNItems, hipcub::BLOCK_LOAD_WARP_TRANSPOSE>;
-    using BlockLoadVecT = hipcub::BlockLoad<vec_t, kNThreads, kNLoads,
-                                            !kDirectIO ? hipcub::BLOCK_LOAD_WARP_TRANSPOSE : hipcub::BLOCK_LOAD_DIRECT>;
-    using BlockLoadWeightT = hipcub::BlockLoad<input_t, kNThreads, !kIsComplex ? kNItems : kNItems * 2, hipcub::BLOCK_LOAD_WARP_TRANSPOSE>;
-    using BlockLoadWeightVecT = hipcub::BlockLoad<vec_t, kNThreads, !kIsComplex ? kNLoads : kNLoads * 2,
-                                                  !kDirectIO ? hipcub::BLOCK_LOAD_WARP_TRANSPOSE : hipcub::BLOCK_LOAD_DIRECT>;
-    using BlockStoreT = hipcub::BlockStore<input_t, kNThreads, kNItems, hipcub::BLOCK_STORE_WARP_TRANSPOSE>;
-    using BlockStoreVecT = hipcub::BlockStore<vec_t, kNThreads, kNLoads,
-                                              !kDirectIO ? hipcub::BLOCK_STORE_WARP_TRANSPOSE : hipcub::BLOCK_STORE_DIRECT>;
-    // using BlockScanT = hipcub::BlockScan<scan_t, kNThreads, hipcub::BLOCK_SCAN_RAKING_MEMOIZE>;
-    // using BlockScanT = hipcub::BlockScan<scan_t, kNThreads, hipcub::BLOCK_SCAN_RAKING>;
-    using BlockScanT = hipcub::BlockScan<scan_t, kNThreads, hipcub::BLOCK_SCAN_WARP_SCANS>;
+    using BlockLoadT = hipcub::BlockLoad<input_t, kNThreads, kNItems, hipcub::BlockLoadAlgorithm::BLOCK_LOAD_WARP_TRANSPOSE>;
+    using BlockLoadVecT = hipcub::BlockLoad<vec_t, kNThreads, kNLoads, !kDirectIO ? hipcub::BlockLoadAlgorithm::BLOCK_LOAD_WARP_TRANSPOSE : hipcub::BlockLoadAlgorithm::BLOCK_LOAD_DIRECT>;
+    using BlockLoadWeightT = hipcub::BlockLoad<input_t, kNThreads, !kIsComplex ? kNItems : kNItems * 2, hipcub::BlockLoadAlgorithm::BLOCK_LOAD_WARP_TRANSPOSE>;
+    using BlockLoadWeightVecT = hipcub::BlockLoad<vec_t, kNThreads, !kIsComplex ? kNLoads : kNLoads * 2, !kDirectIO ? hipcub::BlockLoadAlgorithm::BLOCK_LOAD_WARP_TRANSPOSE : hipcub::BlockLoadAlgorithm::BLOCK_LOAD_DIRECT>;
+    using BlockStoreT = hipcub::BlockStore<input_t, kNThreads, kNItems, hipcub::BlockStoreAlgorithm::BLOCK_STORE_WARP_TRANSPOSE>;
+    using BlockStoreVecT = hipcub::BlockStore<vec_t, kNThreads, kNLoads, !kDirectIO ? hipcub::BlockStoreAlgorithm::BLOCK_STORE_WARP_TRANSPOSE : hipcub::BlockStoreAlgorithm::BLOCK_STORE_DIRECT>;
+    // using BlockScanT = hipcub::BlockScan<scan_t, kNThreads, hipcub::BlockScanAlgorithm::BLOCK_SCAN_RAKING_MEMOIZE>;
+    // using BlockScanT = hipcub::BlockScan<scan_t, kNThreads, hipcub::BlockScanAlgorithm::BLOCK_SCAN_RAKING>;
+    using BlockScanT = hipcub::BlockScan<scan_t, kNThreads, hipcub::BlockScanAlgorithm::BLOCK_SCAN_WARP_SCANS>;
     static constexpr int kSmemIOSize = std::max({sizeof(typename BlockLoadT::TempStorage),
                                                  sizeof(typename BlockLoadVecT::TempStorage),
                                                  (int(kIsVariableB) + int(kIsVariableC)) * sizeof(typename BlockLoadWeightT::TempStorage),
@@ -65,7 +62,7 @@ struct Selective_Scan_fwd_kernel_traits
 };
 
 template <typename Ktraits>
-__global__ __launch_bounds__(Ktraits::kNThreads, Ktraits::kMinBlocks) void selective_scan_fwd_kernel(SSMParamsBase params, int kSmemIOSize, int kSmemSize)
+__global__ __launch_bounds__(Ktraits::kNThreads, Ktraits::kMinBlocks) void selective_scan_fwd_kernel(SSMParamsBase params)
 {
     constexpr bool kIsComplex = Ktraits::kIsComplex;
     constexpr bool kIsVariableB = Ktraits::kIsVariableB;
@@ -75,6 +72,8 @@ __global__ __launch_bounds__(Ktraits::kNThreads, Ktraits::kMinBlocks) void selec
     constexpr int kNItems = Ktraits::kNItems;
     constexpr int kNRows = Ktraits::kNRows;
     constexpr bool kDirectIO = Ktraits::kDirectIO;
+    constexpr int kSmemIOSize = Ktraits::kSmemIOSize;
+    constexpr int kSmemSize = Ktraits::kSmemSize;
 
     using input_t = typename Ktraits::input_t;
     using weight_t = typename Ktraits::weight_t;
@@ -375,7 +374,7 @@ void selective_scan_fwd_launch(SSMParamsBase &params, hipStream_t stream)
                         const void* kernelPointer = reinterpret_cast<const void*>(kernel);
                         C10_HIP_CHECK(hipFuncSetAttribute(kernelPointer, hipFuncAttributeMaxDynamicSharedMemorySize, kSmemSize));
                     }
-                    hipLaunchKernelGGL((kernel), dim3(grid), dim3(Ktraits::kNThreads), kSmemSize, stream, params, Ktraits::kSmemIOSize, Ktraits::kSmemSize);
+                    hipLaunchKernelGGL((kernel), dim3(grid), dim3(Ktraits::kNThreads), kSmemSize, stream, params);
                     C10_HIP_KERNEL_LAUNCH_CHECK(); }); }); }); });
 }
 

@@ -4,6 +4,6 @@
 
 // Split into multiple files to compile in paralell
 
-#include "selective_scan_bwd_kernel.h"
+#include "selective_scan_bwd_kernel.hpp"
 
 template void selective_scan_bwd_hip<at::Half, complex_t>(SSMParamsBwd &params, hipStream_t stream);

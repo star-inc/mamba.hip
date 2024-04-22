@@ -269,7 +269,6 @@ inline __device__ void store_output(typename Ktraits::input_t *out,
     }
     else
     {
-        typename Ktraits::BlockStoreT blockStore(smem_store);
-        blockStore.Store(out, write_vals, seqlen);
+        typename Ktraits::BlockStoreT(smem_store).Store(out, write_vals, seqlen);
     }
 }

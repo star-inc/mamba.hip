@@ -5,7 +5,7 @@
 #pragma once
 
 #include <hipcub/hipcub.hpp>
-#include "uninitialized_copy.h"
+#include "uninitialized_copy.hpp"
 
 /**
  * Perform a reverse sequential reduction over \p LENGTH elements of the \p input array.  The aggregate is returned.

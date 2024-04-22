@@ -15,7 +15,7 @@
 
 #include "selective_scan.h"
 #include "selective_scan_common.h"
-#include "reverse_scan.h"
+#include "reverse_scan.hpp"
 #include "static_switch.h"
 
 template <typename scalar_t>
@@ -32,7 +32,7 @@ struct Selective_Scan_bwd_kernel_traits
     static_assert(kNItems_ % 4 == 0);
     using input_t = input_t_;
     using weight_t = weight_t_;
-    static constexpr int kNThreads = kNThreads_;
+    static constexpr int kNThreads = ::rocprim::device_warp_size() * (kNThreads_ / 32);
     static constexpr int kNItems = kNItems_;
     static constexpr int kNBytes = sizeof(input_t);
     static_assert(kNBytes == 2 || kNBytes == 4);
@@ -50,20 +50,20 @@ struct Selective_Scan_bwd_kernel_traits
     static constexpr int kMinBlocks = kNThreads == 128 && !kIsComplex ? 3 : 2;
     using vec_t = typename BytesToType<kNBytes * kNElts>::Type;
     using scan_t = std::conditional_t<!kIsComplex, float2, float4>;
-    using BlockLoadT = hipcub::BlockLoad<input_t, kNThreads, kNItems, hipcub::BLOCK_LOAD_WARP_TRANSPOSE>;
-    using BlockLoadVecT = hipcub::BlockLoad<vec_t, kNThreads, kNLoads, hipcub::BLOCK_LOAD_WARP_TRANSPOSE>;
-    using BlockLoadWeightT = hipcub::BlockLoad<input_t, kNThreads, !kIsComplex ? kNItems : kNItems * 2, hipcub::BLOCK_LOAD_WARP_TRANSPOSE>;
-    using BlockLoadWeightVecT = hipcub::BlockLoad<vec_t, kNThreads, !kIsComplex ? kNLoads : kNLoads * 2, hipcub::BLOCK_LOAD_WARP_TRANSPOSE>;
-    using BlockStoreT = hipcub::BlockStore<input_t, kNThreads, kNItems, hipcub::BLOCK_STORE_WARP_TRANSPOSE>;
-    using BlockStoreVecT = hipcub::BlockStore<vec_t, kNThreads, kNLoads, hipcub::BLOCK_STORE_WARP_TRANSPOSE>;
-    // using BlockScanT = hipcub::BlockScan<scan_t, kNThreads, hipcub::BLOCK_SCAN_RAKING_MEMOIZE>;
-    using BlockScanT = hipcub::BlockScan<scan_t, kNThreads, hipcub::BLOCK_SCAN_RAKING>;
-    // using BlockScanT = hipcub::BlockScan<scan_t, kNThreads, hipcub::BLOCK_SCAN_WARP_SCANS>;
+    using BlockLoadT = hipcub::BlockLoad<input_t, kNThreads, kNItems, hipcub::BlockLoadAlgorithm::BLOCK_LOAD_WARP_TRANSPOSE>;
+    using BlockLoadVecT = hipcub::BlockLoad<vec_t, kNThreads, kNLoads, hipcub::BlockLoadAlgorithm::BLOCK_LOAD_WARP_TRANSPOSE>;
+    using BlockLoadWeightT = hipcub::BlockLoad<input_t, kNThreads, !kIsComplex ? kNItems : kNItems * 2, hipcub::BlockLoadAlgorithm::BLOCK_LOAD_WARP_TRANSPOSE>;
+    using BlockLoadWeightVecT = hipcub::BlockLoad<vec_t, kNThreads, !kIsComplex ? kNLoads : kNLoads * 2, hipcub::BlockLoadAlgorithm::BLOCK_LOAD_WARP_TRANSPOSE>;
+    using BlockStoreT = hipcub::BlockStore<input_t, kNThreads, kNItems, hipcub::BlockStoreAlgorithm::BLOCK_STORE_WARP_TRANSPOSE>;
+    using BlockStoreVecT = hipcub::BlockStore<vec_t, kNThreads, kNLoads, hipcub::BlockStoreAlgorithm::BLOCK_STORE_WARP_TRANSPOSE>;
+    // using BlockScanT = hipcub::BlockScan<scan_t, kNThreads, hipcub::BlockScanAlgorithm::BLOCK_SCAN_RAKING_MEMOIZE>;
+    using BlockScanT = hipcub::BlockScan<scan_t, kNThreads, hipcub::BlockScanAlgorithm::BLOCK_SCAN_RAKING>;
+    // using BlockScanT = hipcub::BlockScan<scan_t, kNThreads, hipcub::BlockScanAlgorithm::BLOCK_SCAN_WARP_SCANS>;
     using BlockReverseScanT = BlockReverseScan<scan_t, kNThreads>;
-    using BlockReduceT = hipcub::BlockReduce<scan_t, kNThreads>;
-    using BlockReduceFloatT = hipcub::BlockReduce<float, kNThreads>;
-    using BlockReduceComplexT = hipcub::BlockReduce<complex_t, kNThreads>;
-    using BlockExchangeT = hipcub::BlockExchange<float, kNThreads, !kIsComplex ? kNItems : kNItems * 2>;
+    using BlockReduceT = hipcub::BlockReduce<scan_t, kNThreads, hipcub::BlockReduceAlgorithm::BLOCK_REDUCE_WARP_REDUCTIONS>;
+    using BlockReduceFloatT = hipcub::BlockReduce<float, kNThreads, hipcub::BlockReduceAlgorithm::BLOCK_REDUCE_WARP_REDUCTIONS>;
+    using BlockReduceComplexT = hipcub::BlockReduce<complex_t, kNThreads, hipcub::BlockReduceAlgorithm::BLOCK_REDUCE_WARP_REDUCTIONS>;
+    using BlockExchangeT = hipcub::BlockExchange<float, kNThreads, !kIsComplex ? kNItems : kNItems * 2, false>;
     static constexpr int kSmemIOSize = std::max({sizeof(typename BlockLoadT::TempStorage),
                                                  sizeof(typename BlockLoadVecT::TempStorage),
                                                  (int(kIsVariableB) + int(kIsVariableC)) * sizeof(typename BlockLoadWeightT::TempStorage),
@@ -76,7 +76,7 @@ struct Selective_Scan_bwd_kernel_traits
 };
 
 template <typename Ktraits>
-__global__ __launch_bounds__(Ktraits::kNThreads, Ktraits::kMinBlocks) void selective_scan_bwd_kernel(SSMParamsBwd params, int kSmemIOSize, int kSmemSize)
+__global__ __launch_bounds__(Ktraits::kNThreads, Ktraits::kMinBlocks) void selective_scan_bwd_kernel(SSMParamsBwd params)
 {
     constexpr bool kIsComplex = Ktraits::kIsComplex;
     constexpr bool kIsVariableB = Ktraits::kIsVariableB;
@@ -85,6 +85,8 @@ __global__ __launch_bounds__(Ktraits::kNThreads, Ktraits::kMinBlocks) void selec
     constexpr bool kHasZ = Ktraits::kHasZ;
     constexpr int kNThreads = Ktraits::kNThreads;
     constexpr int kNItems = Ktraits::kNItems;
+    constexpr int kSmemIOSize = Ktraits::kSmemIOSize;
+    constexpr int kSmemSize = Ktraits::kSmemSize;
 
     using input_t = typename Ktraits::input_t;
     using weight_t = typename Ktraits::weight_t;
@@ -607,7 +609,7 @@ void selective_scan_bwd_launch(SSMParamsBwd &params, hipStream_t stream)
                             const void* kernelPointer = reinterpret_cast<const void*>(kernel);
                             C10_HIP_CHECK(hipFuncSetAttribute(kernelPointer, hipFuncAttributeMaxDynamicSharedMemorySize, kSmemSize));
                         }
-                        hipLaunchKernelGGL((kernel), dim3(grid), dim3(Ktraits::kNThreads), kSmemSize, stream, params, Ktraits::kSmemIOSize, Ktraits::kSmemSize);
+                        hipLaunchKernelGGL((kernel), dim3(grid), dim3(Ktraits::kNThreads), kSmemSize, stream, params);
                         C10_HIP_KERNEL_LAUNCH_CHECK(); }); }); }); }); });
 }
 

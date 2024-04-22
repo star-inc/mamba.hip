@@ -109,7 +109,7 @@ if not SKIP_CUDA_BUILD:
                     "--ffast-math",
                     "-lineinfo",
                     "-I/opt/rocm/include",
-                    "--amdgpu-llvm-compiler-options=-v",
+                    #"--amdgpu-llvm-compiler-options=-v",
                 ],
             },
             include_dirs=[Path(this_dir) / "csrc" / "selective_scan"],
