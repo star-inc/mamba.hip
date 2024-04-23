@@ -5,6 +5,12 @@
 > Albert Gu*, Tri Dao*\
 > Paper: https://arxiv.org/abs/2312.00752
 
+## BF16 Bug of AMD ROCm
+
+There is a bug of the BF16 header file in the AMD ROCm.
+
+<https://github.com/vllm-project/vllm/pull/2790/files>
+
 ## About
 
 Mamba is a new state space model architecture showing promising performance on information-dense data such as language modeling, where previous subquadratic models fall short of Transformers.
